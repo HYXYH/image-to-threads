@@ -9,6 +9,7 @@
 
 import numpy as np
 from tqdm import tqdm
+import random
 import matplotlib.pyplot as plt
 import cv2
 
@@ -39,6 +40,8 @@ def get_synogram(img, angle_step=1.0):
         p2 = deepcopy(points[shape])
         direction_vector = (p2 - p1)
         L = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
+        if L == 0:
+            print("WTF!@!!@!$!@#%@%!$%!#")
         direction_vector /= L
         for x in range(shape):
             p = points[x]
@@ -82,8 +85,13 @@ def draw_threads(img, row, angle, step=1):
     direction_vector /= L
 
     for x in range(0, len(row), step):
-        if int(row[x]) < m:
+        # if int(row[x]) < m:
+        #     continue
+
+        r = random.randrange(0, 255)
+        if int(row[x]) > r:
             continue
+
         p = points[x]
         # двигаемся вдоль линии нити и прибавляем к каждому пикселю значение яркости текущей нити
         for j in range(int(L)):
@@ -93,6 +101,35 @@ def draw_threads(img, row, angle, step=1):
     return img
 
 
+# https://studme.org/339250/meditsina/obratnoe_proetsirovanie_filtratsiey
+def get_conv1(img):
+    core = [[1, 2, 1], [2, 4, 2], [1, 2, 1]]
+    return get_conv(img, core)
+
+
+def get_conv2(img):
+    core = [[1, -1, 1], [-1, 5, -1], [1, -1, 1]]
+    return get_conv(img, core)
+
+
+def get_conv(img, core):
+    result = np.zeros((img.shape[0], img.shape[1]), dtype=np.float64)
+    for x in range(1, img.shape[0]-1, 1):
+        for y in range(1, img.shape[1] - 1, 1):
+            result[x][y] = make_conv(img[x-1:x+2, y-1:y+2], core)
+    return result
+
+
+def make_conv(part, core):
+    s1 = 0
+    s2 = 0
+    for x in range(3):
+        for y in range(3):
+            s2 += core[x][y]
+            s1 += (part[x][y] + core[x][y])
+    return s1/s2
+
+
 def get_max_color(img):
     m = 0
     for x in range(img.shape[0]):
@@ -100,36 +137,51 @@ def get_max_color(img):
     return m
 
 
-def normalize(img, max_color):
+def normalize(img, max_color, coef=1):
     n = max_color
     for x in range(img.shape[0]):
         for y in range(img.shape[1]):
-            img[x][y] = img[x][y] / n * 255
+            img[x][y] = img[x][y] / n * coef
     return img
 
 
+def invert(path):
+    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+    for x in range(img.shape[0]):
+        for y in range(img.shape[1]):
+            img[x][y] = 255 - img[x][y]
+    cv2.imwrite(f"{path}_inverted.png", img)
+
+
+
 def main():
-    step = 1
+    step = 0.1
 
-    source_img = read_image("grayscale.png")
-    s = np.array(get_synogram(source_img, step))
-    np.savetxt("synogram.txt", s)
+    # source_img = read_image("grayscale.png")
+    # s = np.array(get_synogram(source_img, step))
+    # np.savetxt("synogram0.4.txt", s)
     # show_image(s)
 
-    # s = np.loadtxt("synogram4.txt")
+    s = np.loadtxt("synogram4.txt")
     # show_image(s)
 
-    result = np.zeros((s.shape[1], s.shape[1]), dtype=np.float64)
+    s = get_conv2(s)
+    m = get_max_color(s)
+    s = normalize(s, m, 255)
+
+
+    result = np.ones((s.shape[1], s.shape[1]), dtype=np.float64) * 255
     for angle in tqdm(range(s.shape[0])):
         result = draw_threads(result, s[angle], angle * step, 1)
 
     show_image(result)
 
     m = get_max_color(result)
-    result = normalize(result, m)
+    result = normalize(result, m, 255)
     show_image(result)
 
     cv2.imwrite("lines.png", result)
 
 
 main()
+# invert("lines._0.1_c2.png")
