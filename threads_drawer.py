@@ -28,35 +28,27 @@ def read_image(path):
     return source_img
 
 
-def get_synogram(img, angle_step=1.0):
-    synogram = []
-    shape = img.shape[0]
-    # начальные + концевые точки линий, вдоль которых проецируем картинку.
-    points = np.array([[x, 0., 1.] for x in range(shape)] + [[x, shape, 1.] for x in range(shape)])
+def rotate(image, angle):
+    (h, w) = image.shape[:2]
+    center = (w / 2, h / 2)
+    M = cv2.getRotationMatrix2D(center, angle, 1)
+    rotated = cv2.warpAffine(image, M, (w, h))
+    return rotated
 
-    for _ in tqdm(np.arange(0.0, 179.0, angle_step)):
+
+def get_synogram(image, angle_step=1.0):
+    shape = image.shape[0]
+    synogram = []
+
+    for i in tqdm(np.arange(0.0, 179.0, angle_step)):
         row = []
-        p1 = deepcopy(points[0])
-        p2 = deepcopy(points[shape])
-        direction_vector = (p2 - p1)
-        L = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
-        if L == 0:
-            print("WTF!@!!@!$!@#%@%!$%!#")
-        direction_vector /= L
-        for x in range(shape):
-            p = points[x]
+        rotated_image = rotate(image, i * angle_step)
+        for y in range(shape):
             density = 0
-            # двигаемся вдоль линии проекции и прибавляем значение каждого пикселя к density
-            for j in range(int(L)):
-                if 0 < p[0] < shape and 0 < p[1] < shape:
-                    density += img[int(p[0])][int(p[1])]
-                p += direction_vector
+            for x in range(shape):
+                density += rotated_image[y][x]
             row.append(int(density))
         synogram.append(row)
-        # поворачиваем линии проекции вокруг центра картинки на угол angle_step
-        M = cv2.getRotationMatrix2D((shape/2, shape/2), angle_step, 1)
-        points = M.dot(points.T).T
-        points = np.hstack((points, np.ones((shape * 2, 1))))
     return synogram
 
 
@@ -89,7 +81,7 @@ def draw_threads(img, row, angle, step=1):
         #     continue
 
         r = random.randrange(0, 255)
-        if int(row[x]) > r:
+        if int(row[x]) < r:
             continue
 
         p = points[x]
@@ -145,24 +137,15 @@ def normalize(img, max_color, coef=1):
     return img
 
 
-def invert(path):
-    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
-    for x in range(img.shape[0]):
-        for y in range(img.shape[1]):
-            img[x][y] = 255 - img[x][y]
-    cv2.imwrite(f"{path}_inverted.png", img)
-
-
-
 def main():
     step = 0.1
 
-    # source_img = read_image("grayscale.png")
-    # s = np.array(get_synogram(source_img, step))
-    # np.savetxt("synogram0.4.txt", s)
-    # show_image(s)
+    source_img = read_image("grayscale.png")
+    s = np.array(get_synogram(source_img, step))
+    np.savetxt("synogram_tmp.txt", s)
+    show_image(s)
 
-    s = np.loadtxt("synogram4.txt")
+    # s = np.loadtxt("synogram_tmp.txt")
     # show_image(s)
 
     s = get_conv2(s)
@@ -170,7 +153,7 @@ def main():
     s = normalize(s, m, 255)
 
 
-    result = np.ones((s.shape[1], s.shape[1]), dtype=np.float64) * 255
+    result = np.zeros((s.shape[1], s.shape[1]), dtype=np.float64)
     for angle in tqdm(range(s.shape[0])):
         result = draw_threads(result, s[angle], angle * step, 1)
 
@@ -184,4 +167,3 @@ def main():
 
 
 main()
-# invert("lines._0.1_c2.png")
