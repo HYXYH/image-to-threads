@@ -13,8 +13,6 @@ import random
 import matplotlib.pyplot as plt
 import cv2
 
-from copy import deepcopy
-
 
 # read and add border
 def read_image(path):
@@ -42,7 +40,7 @@ def get_synogram(image, angle_step=1.0):
 
     for i in tqdm(np.arange(0.0, 179.0, angle_step)):
         row = []
-        rotated_image = rotate(image, i * angle_step)
+        rotated_image = rotate(image, i)
         for y in range(shape):
             density = 0
             for x in range(shape):
@@ -60,7 +58,7 @@ def show_image(image):
     plt.show()
 
 
-def draw_threads(img, row, angle, step=1):
+def draw_threads(img, row, angle):
     c = len(row)/2
     # начальные + концевые точки нитей
     points = np.array([[x, 0, 1] for x in range(len(row))] + [[x, len(row), 1] for x in range(len(row))])
@@ -76,7 +74,7 @@ def draw_threads(img, row, angle, step=1):
     L = np.sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
     direction_vector /= L
 
-    for x in range(0, len(row), step):
+    for x in range(len(row)):
         # if int(row[x]) < m:
         #     continue
 
@@ -152,10 +150,9 @@ def main():
     m = get_max_color(s)
     s = normalize(s, m, 255)
 
-
-    result = np.zeros((s.shape[1], s.shape[1]), dtype=np.float64)
+    result = np.zeros((s.shape[1], s.shape[1]))
     for angle in tqdm(range(s.shape[0])):
-        result = draw_threads(result, s[angle], angle * step, 1)
+        result = draw_threads(result, s[angle], angle * step)
 
     show_image(result)
 
