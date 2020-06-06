@@ -38,7 +38,9 @@ def get_synogram(image, angle_step=1.0):
     shape = image.shape[0]
     synogram = []
 
-    for i in tqdm(np.arange(0.0, 179.0, angle_step)):
+    pbar = tqdm(np.arange(0.0, 179.0, angle_step))
+    pbar.set_description("synogram")
+    for i in pbar:
         row = []
         rotated_image = rotate(image, i)
         for y in range(shape):
@@ -58,15 +60,12 @@ def show_image(image):
     plt.show()
 
 
-def draw_threads(img, row, angle):
+def draw_threads(img, row, angle, rand_lines=False):
     c = len(row)/2
     # начальные + концевые точки нитей
     points = np.array([[x, 0, 1] for x in range(len(row))] + [[x, len(row), 1] for x in range(len(row))])
     M = cv2.getRotationMatrix2D((c, c), angle, 1)
     points = M.dot(points.T).T
-
-    # m = max(row) - ((max(row) - min(row)) / 2)
-    m = 1
 
     p1 = points[0]
     p2 = points[len(row)]
@@ -75,12 +74,10 @@ def draw_threads(img, row, angle):
     direction_vector /= L
 
     for x in range(len(row)):
-        # if int(row[x]) < m:
-        #     continue
-
-        r = random.randrange(0, 255)
-        if int(row[x]) < r:
-            continue
+        if rand_lines:
+            r = random.randrange(0, 255)
+            if int(row[x]) < r:
+                continue
 
         p = points[x]
         # двигаемся вдоль линии нити и прибавляем к каждому пикселю значение яркости текущей нити
@@ -90,77 +87,91 @@ def draw_threads(img, row, angle):
             p += direction_vector
     return img
 
-
-# https://studme.org/339250/meditsina/obratnoe_proetsirovanie_filtratsiey
-def get_conv1(img):
-    core = [[1, 2, 1], [2, 4, 2], [1, 2, 1]]
-    return get_conv(img, core)
-
-
-def get_conv2(img):
-    core = [[1, -1, 1], [-1, 5, -1], [1, -1, 1]]
-    return get_conv(img, core)
-
-
-def get_conv(img, core):
-    result = np.zeros((img.shape[0], img.shape[1]), dtype=np.float64)
-    for x in range(1, img.shape[0]-1, 1):
-        for y in range(1, img.shape[1] - 1, 1):
-            result[x][y] = make_conv(img[x-1:x+2, y-1:y+2], core)
-    return result
+# https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4341983/
+def get_ramp_conv(img):
+    result = []
+    f = get_filter(img.shape[1])
+    pbar = tqdm(range(img.shape[0]))
+    pbar.set_description("filter")
+    for x in pbar:
+        result.append(conv_row(img[x].tolist(), f))
+    return np.array(result)
 
 
-def make_conv(part, core):
-    s1 = 0
-    s2 = 0
-    for x in range(3):
-        for y in range(3):
-            s2 += core[x][y]
-            s1 += (part[x][y] + core[x][y])
-    return s1/s2
+# дискретный вариант, после обратного преобразования Фурье. По ссылке выше есть вывод формулы.
+def ramp(n):
+    if n == 0:
+        return 0.25
+    if n % 2 == 0:
+        return 0
+    return -1 / ((np.pi * n)**2)
 
 
-def get_max_color(img):
-    m = 0
+# чем длиннее фильтр, тем точнее результат
+def get_filter(tail_len):
+    ramp_row = [ramp(i) for i in range(tail_len, 0, -1)] + [ramp(0)] + [ramp(i) for i in range(1, tail_len+1, 1)]
+    return ramp_row
+
+
+def conv_row(row, filter):
+    tail_len = int((len(filter)-1) / 2)
+    row2 = [0] * tail_len + row + [0] * tail_len
+    conv = []
+    for i in range(len(row)):
+        s = 0
+        for j in range(len(filter)):
+           s += row2[i+j] * filter[j]
+        conv.append(s)
+    return conv
+
+
+def get_min_max_color(img):
+    m1 = 0
+    m2 = 0
     for x in range(img.shape[0]):
-        m = max(m, max(img[x]))
-    return m
+        m1 = min(m1, min(img[x]))
+        m2 = max(m2, max(img[x]))
+    return m1, m2
 
 
-def normalize(img, max_color, coef=1):
-    n = max_color
+def normalize(img, coef=1):
+    normalized = np.zeros((img.shape[0], img.shape[1]))
+    m1, m2 = get_min_max_color(img)
+    lift = 0
+    if m1 < 0:
+        lift = -m1
     for x in range(img.shape[0]):
         for y in range(img.shape[1]):
-            img[x][y] = img[x][y] / n * coef
-    return img
+            normalized[x][y] = ((img[x][y] + lift) / (m2+lift)) * coef
+    return normalized
 
 
 def main():
-    step = 0.1
+    step = 1
+    rand_lines = True
 
     source_img = read_image("grayscale.png")
-    s = np.array(get_synogram(source_img, step))
-    np.savetxt("synogram_tmp.txt", s)
+    s = np.array(get_synogram(source_img, step), dtype=np.float64)
     show_image(s)
+    cv2.imwrite("synogram.png", normalize(s, 255))
 
-    # s = np.loadtxt("synogram_tmp.txt")
+    np.savetxt("synogram.txt", s)
+    # s = np.loadtxt("synogram.txt")
     # show_image(s)
 
-    s = get_conv2(s)
-    m = get_max_color(s)
-    s = normalize(s, m, 255)
+    s = get_ramp_conv(s)
+    show_image(s)
 
-    result = np.zeros((s.shape[1], s.shape[1]))
-    for angle in tqdm(range(s.shape[0])):
-        result = draw_threads(result, s[angle], angle * step)
+    cv2.imwrite("synogram_ramp_filtered.png", normalize(s, 255))
 
+    result = np.zeros((s.shape[1], s.shape[1]), dtype=np.float64)
+    pbar = tqdm(range(s.shape[0]))
+    pbar.set_description("draw")
+    for angle in pbar:
+        result = draw_threads(result, s[angle], angle * step, rand_lines)
     show_image(result)
-
-    m = get_max_color(result)
-    result = normalize(result, m, 255)
-    show_image(result)
-
-    cv2.imwrite("lines.png", result)
+    rl = "randlines" if rand_lines else ""
+    cv2.imwrite(f"lines_step{step}_{rl}.png", normalize(result, 255))
 
 
 main()
